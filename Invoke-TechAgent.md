@@ -25,6 +25,9 @@ Sends a prompt to the TechToolbox local agent for automated task execution.
 | **SignedFilePolicy** | `string` | Policy to use when overwriting an existing Authenticode-signed PowerShell file. Valid values: `'ignore'` (blocks overwrite) or `'strip'` (allows overwrite while removing signature block text). |
 | **AutoRetryOnRecursion** | `switch` | Enables a single automatic retry when the C# agent hits an iteration limit. |
 | **DisableAutoRetryOnRecursion** | `switch` | Disables recursion-limit auto-retry for this invocation, overriding any global settings. |
+| **Provider** | `string` | LLM provider to use. Valid values: `'ollama'`, `'openai'`, `'openai-compatible'`, `'azure-openai'`. Defaults to configured provider. |
+| **Endpoint** | `string` | Custom API endpoint URL for OpenAI-compatible providers or Azure OpenAI deployments. |
+| **Deployment** | `string` | Azure OpenAI deployment name when using the `azure-openai` provider. |
 
 ---
 
@@ -37,6 +40,26 @@ Invoke-TechAgent supports multiple LLM providers:
 - **openai** - OpenAI cloud API (GPT models)
 - **openai-compatible** - Compatible endpoints (e.g., local LLM servers)
 - **azure-openai** - Azure OpenAI Service deployments
+
+### Configuration Requirements
+
+#### OpenAI Cloud Provider
+To use the OpenAI provider, configure your API key:
+```powershell
+Set-TechAgentApiKey -Provider openai
+```
+
+#### Azure OpenAI Provider
+For Azure OpenAI, specify the endpoint and deployment:
+```powershell
+Invoke-TechAgent -Prompt "Your task" -Provider azure-openai -Endpoint "https://your-resource.openai.azure.com" -Deployment "gpt-4o-mini"
+```
+
+#### OpenAI-Compatible Providers
+For compatible endpoints, provide a custom endpoint URL:
+```powershell
+Invoke-TechAgent -Prompt "Your task" -Provider openai-compatible -Endpoint "http://localhost:11434"
+```
 
 ### API Key Configuration
 
@@ -125,7 +148,8 @@ Invoke-TechAgent -Prompt "<your instruction>"
 Before using Invoke-TechAgent, ensure:
 - TechToolbox is installed and configured
 - AI settings are defined in the TechToolbox configuration (`settings.agent.provider`)
-- For cloud providers: API key is configured via `Set-TechAgentApiKey` or environment variable
+- For cloud providers (OpenAI, Azure OpenAI): API key is configured via `Set-TechAgentApiKey` or environment variable
+- For OpenAI-compatible providers: Custom endpoint URL must be specified
 - For Ollama: Model is available locally (use `Install-TechAgentRuntime -PullModel` to download)
 
 ---
