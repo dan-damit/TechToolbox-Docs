@@ -1,259 +1,89 @@
-# Invoke-TechAgent
+## Invoke-TechAgent
 
-Sends a prompt to the TechToolbox local agent for automated task execution.
+Sends a prompt to the TechToolbox local agent runtime and returns the agent response.
 
----
+## What this command does
 
-## Overview
+- Calls the TechToolbox.Agent C# runtime from PowerShell.
+- Resolves prompt input from one source only:
+  - `-Prompt`
+  - `-PromptFile`
+  - default prompt file from config (`settings.agent.defaultPromptFile`) or fallback `AI\prompt.txt`
+- Applies model/provider settings from parameters first, then config defaults.
+- Supports execution control modes (`execute`, `plan`, `analyze`).
+- Supports output format contracts (`markdown`, `plain-text`, `json`).
 
-`Invoke-TechAgent` is a helper function that facilitates interaction with the TechToolbox.Agent C# runtime. It allows users to send natural-language instructions (prompts) to an AI agent, which then performs actions on behalf of the user using available tools and scripts.
+## Syntax
 
-> **Note:** The function requires a valid TechToolbox configuration with AI settings defined. It initializes the runtime environment before sending the request.
-
----
+`Invoke-TechAgent [-Prompt <string>] [-PromptFile <string>] [-Model <string>] [-Provider <string>] [-Endpoint <string>] [-Deployment <string>] [-ApiVersion <string>] [-ApiKeyEnvVar <string>] [-ApiKeyEncrypted] [-ApiKeyEncryptedBlob <string>] [-DisableApiKeyPrompt] [-MaxIterations <int>] [-PromptHistoryItems <int>] [-ExecutionMode <string>] [-StrictPromptPreflight] [-OutputContract <string>] [-QualityProfile <string>] [-Quiet] [-ConfirmDestructive] [-SignedFilePolicy <string>] [-AutoRetryOnRecursion] [-DisableAutoRetryOnRecursion] [-NoTranscript <bool>] [-AllowMetaTools]`
 
 ## Parameters
 
-| Parameter | Type | Description |
-|----------|------|-------------|
-| **Prompt** | `string` | **[Mandatory]** The natural-language instruction for the agent. This is the primary input defining what task to perform. |
-| **PromptFile** | `string` | Optional path to a text file containing the prompt. If omitted and `-Prompt` is empty, Invoke-TechAgent attempts to load a default prompt file. |
-| **Model** | `string` | Optional Ollama model name (e.g., `llama3`, `mistral`, `qwen2.5-coder`). Specifies which AI model to use for processing the prompt. |
-| **MaxIterations** | `int` | Maximum number of tool/reasoning iterations before the agent concludes. Valid range: 1-500. Defaults to `15`. |
-| **Quiet** | `switch` | Legacy compatibility switch. Agent traces are now suppressed by default, but this parameter remains for backward compatibility. |
-| **ConfirmDestructive** | `switch` | Explicitly authorizes destructive operations for this run. Use with caution. |
-| **SignedFilePolicy** | `string` | Policy to use when overwriting an existing Authenticode-signed PowerShell file. Valid values: `'ignore'` (blocks overwrite) or `'strip'` (allows overwrite while removing signature block text). |
-| **AutoRetryOnRecursion** | `switch` | Enables a single automatic retry when the C# agent hits an iteration limit. |
-| **DisableAutoRetryOnRecursion** | `switch` | Disables recursion-limit auto-retry for this invocation, overriding any global settings. |
-| **Provider** | `string` | LLM provider to use. Valid values: `'ollama'`, `'openai'`, `'openai-compatible'`, `'azure-openai'`. Defaults to configured provider. |
-| **Endpoint** | `string` | Custom API endpoint URL for OpenAI-compatible providers or Azure OpenAI deployments. |
-| **Deployment** | `string` | Azure OpenAI deployment name when using the `azure-openai` provider. |
+| Name | Type | Allowed values / range | Default | Description |
+| - | - | - | - | - |
+| `Prompt` | `string` | non-empty when provided | none | Natural-language instruction for the agent. |
+| `PromptFile` | `string` | valid file path | none | Path to a prompt text file. Cannot be used with `-Prompt`. |
+| `Model` | `string` | any non-empty model name | from config if set | Model name (for example `llama3`, `mistral`, `qwen2.5-coder`). |
+| `Provider` | `string` | `ollama`, `openai`, `openai-compatible`, `azure-openai` | `ollama` (if not set in config/param) | LLM provider selection. |
+| `Endpoint` | `string` | URL/string | none | Provider endpoint. For Azure OpenAI, use resource endpoint (for example `https://name.openai.azure.com`). |
+| `Deployment` | `string` | string | none | Azure OpenAI deployment name. |
+| `ApiVersion` | `string` | string | none | API version for providers that require it. |
+| `ApiKeyEnvVar` | `string` | non-empty env var name | `TT_AGENT_LLM_API_KEY` | Environment variable name used for cloud API key lookup. |
+| `ApiKeyEncrypted` | `switch` | n/a | off | Prefer encrypted config-based API key resolution and skip env var lookup. |
+| `ApiKeyEncryptedBlob` | `string` | DPAPI blob text | none | Optional encrypted API key blob (from `ConvertFrom-SecureString`), overrides `settings.agent.apiKeyEncrypted`. |
+| `DisableApiKeyPrompt` | `switch` | n/a | off | Disable interactive API key capture/storage prompts. |
+| `MaxIterations` | `int` | `1..500` | `15` | Maximum tool/reasoning iterations before conclusion. |
+| `PromptHistoryItems` | `int` | `0..20` | runtime/config dependent | Number of recent memory history entries injected into prompt context. `0` disables history injection. |
+| `ExecutionMode` | `string` | `execute`, `plan`, `analyze` | `execute` | Controls whether tools run or the agent returns no-tool planning/analysis. |
+| `StrictPromptPreflight` | `switch` | n/a | off | Treat prompt preflight warnings as blocking validation failures. |
+| `OutputContract` | `string` | `markdown`, `plain-text`, `json` | runtime/config dependent | Required final response format. |
+| `QualityProfile` | `string` | `precise`, `balanced`, `creative` | runtime/config dependent | Sampling/quality profile for response behavior. |
+| `Quiet` | `switch` | n/a | off | Legacy compatibility switch; traces are suppressed by default. |
+| `ConfirmDestructive` | `switch` | n/a | off | Explicitly authorizes destructive operations for this run. |
+| `SignedFilePolicy` | `string` | `ignore`, `strip` | runtime/config dependent | Behavior when overwriting Authenticode-signed PowerShell files. |
+| `AutoRetryOnRecursion` | `switch` | n/a | off | Enable one automatic retry when iteration/recursion limit is hit. |
+| `DisableAutoRetryOnRecursion` | `switch` | n/a | off | Disable recursion-limit auto-retry for this invocation. |
+| `NoTranscript` | `bool` | `true`/`false` | `true` | Disable per-run console transcript logging when `true`. |
+| `AllowMetaTools` | `switch` | n/a | off | Allow higher-order meta tools (for example `Invoke-TechAgent`) for this run. |
 
----
+## Prompt source behavior
 
-## OpenAI Implementation
+- Exactly one explicit prompt source is allowed:
+  - `-Prompt`
+  - `-PromptFile`
+- If neither is provided, the command attempts:
+  - `settings.agent.defaultPromptFile` from config
+  - fallback `AI\prompt.txt` under module root
+- If the resolved prompt file is missing or empty, the command throws.
 
-### Supported Providers
+## Practical examples
 
-Invoke-TechAgent supports multiple LLM providers:
-- **ollama** - Local model execution via Ollama runtime
-- **openai** - OpenAI cloud API (GPT models)
-- **openai-compatible** - Compatible endpoints (e.g., local LLM servers)
-- **azure-openai** - Azure OpenAI Service deployments
+### Basic run
 
-### Configuration Requirements
+`Invoke-TechAgent "Run system diagnostics and summarize findings."`
 
-#### OpenAI Cloud Provider
-To use the OpenAI provider, configure your API key:
-```powershell
-Set-TechAgentApiKey -Provider openai
-```
+### Use a prompt file
 
-#### Azure OpenAI Provider
-For Azure OpenAI, specify the endpoint and deployment:
-```powershell
-Invoke-TechAgent -Prompt "Your task" -Provider azure-openai -Endpoint "https://your-resource.openai.azure.com" -Deployment "gpt-4o-mini"
-```
+`Invoke-TechAgent -PromptFile "AI\prompt.txt"`
 
-#### OpenAI-Compatible Providers
-For compatible endpoints, provide a custom endpoint URL:
-```powershell
-Invoke-TechAgent -Prompt "Your task" -Provider openai-compatible -Endpoint "http://localhost:11434"
-```
+### Cloud provider with explicit endpoint/deployment
 
-### API Key Configuration
+`Invoke-TechAgent -Prompt "Summarize mailbox audit anomalies." -Provider azure-openai -Endpoint "https://name.openai.azure.com" -Deployment "gpt-4o" -ApiVersion "2024-02-15-preview"`
 
-For cloud providers (OpenAI, OpenAI-Compatible, Azure OpenAI), an API key is required. The key can be configured in several ways:
+### Plan-only mode with strict output contract
 
-1. **Encrypted Storage (Recommended)**
-   Use `Set-TechAgentApiKey` to securely store the API key using DPAPI encryption:
-   ```powershell
-   Set-TechAgentApiKey -Provider openai
-   ```
-   This prompts interactively for the key and stores it encrypted in `config.secrets.json`.
+`Invoke-TechAgent -Prompt "Propose a safe remediation sequence." -ExecutionMode plan -OutputContract markdown -QualityProfile precise`
 
-2. **Environment Variable**
-   Set the environment variable (default: `TT_AGENT_LLM_API_KEY`) to bypass encrypted storage:
-   ```powershell
-   $env:TT_AGENT_LLM_API_KEY = "your-api-key"
-   Invoke-TechAgent -Prompt "Your instruction" -Provider openai
-   ```
+### Non-interactive automation
 
-3. **Explicit Parameter**
-   Pass the API key directly (not recommended for production):
-   ```powershell
-   $secureKey = Read-Host "Enter API key" -AsSecureString
-   Invoke-TechAgent -Prompt "Your instruction" -Provider openai -ApiKey $secureKey
-   ```
+`Invoke-TechAgent -PromptFile "AI\job-prompt.txt" -DisableApiKeyPrompt -NoTranscript $true`
 
-### Provider Validation
+## Notes for this repository
 
-Before using cloud providers, validate the configuration with `Test-TechAgentProvider`:
+- This command is documented from `C:\repos\TechToolbox\Public\AI\Invoke-TechAgent.ps1`.
+- Provider/model defaults are resolved from `settings.agent` when not explicitly passed.
+- Use `-ConfirmDestructive` only when the task explicitly requires destructive actions.
 
-```powershell
-# Validate OpenAI configuration only (no network call)
-Test-TechAgentProvider -Provider openai -Model gpt-4o-mini -NoNetwork
+## Reference
 
-# Validate with live API test
-Test-TechAgentProvider -Provider openai -Model gpt-4o-mini
-
-# Validate Azure OpenAI deployment
-Test-TechAgentProvider -Provider azure-openai -Endpoint "https://your-resource.openai.azure.com" -Deployment "gpt-4o-mini"
-```
-
-### Provider-Specific Settings
-
-**OpenAI:**
-- Default endpoint: `https://api.openai.com/v1/chat/completions`
-- Requires `-Model` parameter (e.g., `gpt-4o`, `gpt-4o-mini`, `gpt-3.5-turbo`)
-
-**OpenAI-Compatible:**
-- Requires `-Endpoint` and `-Model` parameters
-- Example: Local LLM server or compatible API
-
-**Azure OpenAI:**
-- Requires `-Endpoint`, `-Deployment`, and optionally `-ApiVersion`
-- Default API version: `2024-10-21`
-- Example:
-  ```powershell
-  Invoke-TechAgent -Prompt "Your instruction" -Provider azure-openai -Endpoint "https://your-resource.openai.azure.com" -Deployment "gpt-4o-mini"
-  ```
-
-### Runtime Setup
-
-For Ollama-based providers, ensure the runtime is installed and configured:
-
-```powershell
-# Validate Ollama installation
-Install-TechAgentRuntime
-
-# Pull a specific model
-Install-TechAgentRuntime -PullModel -Model "qwen3.6:35b"
-```
-
----
-
-## Command-Line Usage
-
-### Basic Invocation
-
-Invoke-TechAgent is called from PowerShell as a standard cmdlet:
-
-```powershell
-Invoke-TechAgent -Prompt "<your instruction>"
-```
-
-### Required Configuration
-
-Before using Invoke-TechAgent, ensure:
-- TechToolbox is installed and configured
-- AI settings are defined in the TechToolbox configuration (`settings.agent.provider`)
-- For cloud providers (OpenAI, Azure OpenAI): API key is configured via `Set-TechAgentApiKey` or environment variable
-- For OpenAI-compatible providers: Custom endpoint URL must be specified
-- For Ollama: Model is available locally (use `Install-TechAgentRuntime -PullModel` to download)
-
----
-
-## How It Works
-
-### **Agent Execution**
-The function calls the TechToolbox.Agent C# runtime and prints the agent's response.
-1. Initializes the TechToolbox runtime environment (`Initialize-TechToolboxRuntime`).
-2. Loads the prompt from `-Prompt` or `-PromptFile`.
-3. Resolves the LLM provider (Ollama, OpenAI, Azure OpenAI, etc.) and API key.
-4. Sends the request to the specified AI model (or default if none provided).
-5. The agent reasons through the task, potentially invoking other tools or scripts.
-6. Returns the final output or error message from the agent.
-
-### **Recursion Handling**
-The agent may recursively call itself for complex tasks. The `-AutoRetryOnRecursion` parameter allows a single automatic retry if an iteration limit is hit, helping to complete multi-step processes that exceed default limits.
-
----
-
-## Examples
-
-### **Basic Prompt Execution**
-Send a simple instruction to the agent using the default model.
-```powershell
-Invoke-TechAgent -Prompt "List all running services on this machine"
-```
-
-### **Using a Specific Model**
-Specify an Ollama model for processing.
-```powershell
-Invoke-TechAgent -Prompt "Analyze the disk usage" -Model "qwen2.5-coder"
-```
-
-### **Loading Prompt from File**
-Use a text file containing the prompt instructions.
-```powershell
-Invoke-TechAgent -PromptFile "C:\prompts\cleanup.txt"
-```
-
-### **Allowing Destructive Actions**
-Explicitly authorize destructive operations for this run.
-```powershell
-Invoke-TechAgent -Prompt "Delete all files in C:\Temp" -ConfirmDestructive
-```
-
-### **Setting Maximum Iterations**
-Control how many tool calls the agent can make before concluding.
-```powershell
-Invoke-TechAgent -Prompt "Research and summarize this topic" -MaxIterations 50
-```
-
-### **Handling Signed Files**
-Specify policy for overwriting signed PowerShell files.
-```powershell
-Invoke-TechAgent -Prompt "Update script at C:\Scripts\test.ps1" -SignedFilePolicy "strip"
-```
-
-### **Using OpenAI Provider**
-Invoke the agent with OpenAI cloud API.
-```powershell
-# First, configure the API key (one-time setup)
-Set-TechAgentApiKey -Provider openai
-
-# Then use it in your command
-Invoke-TechAgent -Prompt "Summarize this article" -Provider openai -Model gpt-4o-mini
-```
-
-### **Using Azure OpenAI**
-Invoke the agent with Azure OpenAI deployment.
-```powershell
-Invoke-TechAgent -Prompt "Analyze system logs" -Provider azure-openai -Endpoint "https://your-resource.openai.azure.com" -Deployment "gpt-4o-mini"
-```
-
-### **Validating Provider Configuration**
-Test your provider setup before running complex tasks.
-```powershell
-# Check configuration without network call
-Test-TechAgentProvider -NoNetwork
-
-# Test with live API call
-Test-TechAgentProvider -Provider openai -Model gpt-4o-mini
-```
-
----
-
-## Notes
-
-- Requires **TechToolbox configuration** to be present with valid AI settings.
-- The `-Model` parameter is optional; if omitted, the default model from configuration is used.
-- Large prompts may exceed context limits depending on the configured model. Consider splitting large tasks into smaller prompts.
-- Use `-ConfirmDestructive` only when you explicitly intend to allow actions that modify or delete data.
-- Agent traces are suppressed by default; use `-Quiet` only for backward compatibility with older scripts.
-- The `-SignedFilePolicy` parameter is useful when the agent needs to overwrite existing signed PowerShell scripts.
-- For complex multi-step tasks, consider using `-AutoRetryOnRecursion` to allow automatic retry on iteration limits.
-- For cloud providers (OpenAI, Azure OpenAI), ensure API key is configured via `Set-TechAgentApiKey` or environment variable before use.
-- Use `Test-TechAgentProvider` to validate provider configuration and connectivity before running tasks.
-- For Ollama-based providers, use `Install-TechAgentRuntime` to validate installation and pull models.
-
----
-
-## Related Commands
-
-- **Set-TechAgentApiKey** - Securely configure API keys for cloud providers
-- **Test-TechAgentProvider** - Validate provider configuration and connectivity
-- **Install-TechAgentRuntime** - Setup Ollama runtime and pull models
-- **Get-TechToolboxConfig** - View current TechToolbox configuration
+- Script help link: `https://dan-damit.github.io/TechToolbox-Docs/Invoke-TechAgent`
